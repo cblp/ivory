@@ -1,9 +1,14 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Generic pointer
 module Ivory.Language.Pointer
@@ -19,6 +24,9 @@ module Ivory.Language.Pointer
   , withRef
   ) where
 
+import           Data.Singletons (SingI, fromSing, sing)
+import           Data.Singletons.TH (singletons)
+
 import           Ivory.Language.Area (Area, IvoryArea, ivoryArea)
 import           Ivory.Language.IBool ((/=?), IvoryEq, ifte_)
 import           Ivory.Language.Monad (Ivory)
@@ -31,36 +39,25 @@ import           Ivory.Language.Type
                  (IvoryExpr, IvoryType, IvoryVar, ivoryType, unwrapExpr,
                   wrapExpr, wrapVar, wrapVarExpr)
 
--- * Nullability
-data Nullability
-  = Nullable -- ^ may be NULL
-  | Valid -- ^ may not be NULL
+singletons [d|
 
-class KnownNullability (n :: Nullability) where
-  demoteNullability :: Proxy n -> Nullability
+  data Nullability
+    = Nullable -- ^ may be NULL
+    | Valid -- ^ may not be NULL
 
-instance KnownNullability 'Nullable where
-  demoteNullability _ = Nullable
+  data Constancy
+    = Const -- ^ data may not be modified
+    | Mutable -- ^ data may be modified
 
-instance KnownNullability 'Valid where
-  demoteNullability _ = Valid
+  |]
 
--- * Constancy
-data Constancy
-  = Const -- ^ data may not be modified
-  | Mutable -- ^ data may be modified
+type KnownConstancy (n :: Constancy) = SingI n
 
-class KnownConstancy (c :: Constancy) where
-  demoteConstancy :: Proxy c -> Constancy
-
-instance KnownConstancy 'Const where
-  demoteConstancy _ = Const
-
-instance KnownConstancy 'Mutable where
-  demoteConstancy _ = Mutable
+type KnownNullability (n :: Nullability) = SingI n
 
 -- * Generic Pointer
-data Pointer (n :: Nullability) (c :: Constancy) (s :: RefScope) (a :: Area *) = Pointer
+data Pointer (n :: Nullability) (c :: Constancy) (s :: RefScope) (a :: Area *) =
+  Pointer
   { getPointer :: Expr
   }
 
@@ -68,8 +65,8 @@ instance (KnownNullability n, KnownConstancy c, IvoryArea a) =>
          IvoryType (Pointer n c s a) where
   ivoryType _ =
     pointerTyCon
-      (demoteNullability (Proxy :: Proxy n))
-      (demoteConstancy (Proxy :: Proxy c))
+      (fromSing (sing :: SNullability n))
+      (fromSing (sing :: SConstancy c))
       (ivoryArea (Proxy :: Proxy a))
     where
       pointerTyCon Nullable Const = TyConstPtr
